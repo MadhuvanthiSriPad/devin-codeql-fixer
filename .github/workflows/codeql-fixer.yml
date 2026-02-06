@@ -1,0 +1,56 @@
+name: Fix CodeQL Issues with Devin
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: "Number of alerts per batch (each batch = one Devin session = one PR)"
+        required: false
+        default: "3"
+      severity_filter:
+        description: "Minimum severity to fix (critical, high, medium, low)"
+        required: false
+        default: "medium"
+
+  schedule:
+    # Runs every Monday at 9 AM UTC
+    - cron: "0 9 * * 1"
+
+permissions:
+  contents: read
+  security-events: read
+  pull-requests: read
+
+jobs:
+  fix-codeql-issues:
+    name: Identify & Fix CodeQL Alerts via Devin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Fetch CodeQL alerts and dispatch to Devin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          DEVIN_API_TOKEN: ${{ secrets.DEVIN_API_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          BATCH_SIZE: ${{ github.event.inputs.batch_size || '3' }}
+          SEVERITY_FILTER: ${{ github.event.inputs.severity_filter || 'medium' }}
+        run: python scripts/fix_codeql_issues.py
+
+      - name: Upload run summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: devin-session-report
+          path: devin_sessions_report.json
+          retention-days: 30

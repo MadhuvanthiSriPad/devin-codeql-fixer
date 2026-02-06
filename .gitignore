@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+devin_sessions_report.json
+.venv/
+*.egg-info/
+dist/
+build/
