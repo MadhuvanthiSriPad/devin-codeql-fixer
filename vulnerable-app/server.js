@@ -9,6 +9,7 @@
  */
 
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -32,7 +33,14 @@ db.exec(`
 // VULN 1: SQL Injection — string concatenation in query
 // CodeQL rule: js/sql-injection
 // ---------------------------------------------------------------------------
-app.get("/api/users", (req, res) => {
+const apiUsersLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.get("/api/users", apiUsersLimiter, (req, res) => {
   const search = req.query.search;
   try {
     const rows = db.prepare("SELECT * FROM users WHERE username LIKE ?").all(
