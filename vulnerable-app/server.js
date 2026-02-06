@@ -30,7 +30,6 @@ db.exec(`
 
 // ---------------------------------------------------------------------------
 // VULN 1: SQL Injection — string concatenation in query
-// CodeQL rule: js/sql-injection
 // ---------------------------------------------------------------------------
 app.get("/api/users", (req, res) => {
   const search = req.query.search;
@@ -45,7 +44,6 @@ app.get("/api/users", (req, res) => {
 
 // ---------------------------------------------------------------------------
 // VULN 2: Reflected XSS — user input echoed without encoding
-// CodeQL rule: js/reflected-xss
 // ---------------------------------------------------------------------------
 app.get("/search", (req, res) => {
   const query = req.query.q;
@@ -62,7 +60,6 @@ app.get("/search", (req, res) => {
 
 // ---------------------------------------------------------------------------
 // VULN 3: Path Traversal — user-controlled file path
-// CodeQL rule: js/path-injection
 // ---------------------------------------------------------------------------
 app.get("/api/files", (req, res) => {
   const filename = req.query.name;

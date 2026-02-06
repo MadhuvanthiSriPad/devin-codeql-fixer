@@ -24,7 +24,6 @@ def get_db():
 
 # ---------------------------------------------------------------------------
 # VULN 1: SQL Injection — f-string in query
-# CodeQL rule: py/sql-injection
 # ---------------------------------------------------------------------------
 @app.route("/api/users")
 def search_users():
@@ -39,7 +38,6 @@ def search_users():
 
 # ---------------------------------------------------------------------------
 # VULN 2: Reflected XSS via template injection
-# CodeQL rule: py/reflective-xss
 # ---------------------------------------------------------------------------
 @app.route("/search")
 def search_page():
