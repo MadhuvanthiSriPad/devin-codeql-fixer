@@ -34,9 +34,10 @@ db.exec(`
 // ---------------------------------------------------------------------------
 app.get("/api/users", (req, res) => {
   const search = req.query.search;
-  const query = "SELECT * FROM users WHERE username LIKE '%" + search + "%'";
   try {
-    const rows = db.prepare(query).all();
+    const rows = db.prepare("SELECT * FROM users WHERE username LIKE ?").all(
+      "%" + search + "%"
+    );
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -47,13 +48,24 @@ app.get("/api/users", (req, res) => {
 // VULN 2: Reflected XSS — user input echoed without encoding
 // CodeQL rule: js/reflected-xss
 // ---------------------------------------------------------------------------
+function escapeHtml(str) {
+  if (typeof str !== "string") return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+}
+
 app.get("/search", (req, res) => {
   const query = req.query.q;
+  const safeQuery = escapeHtml(query);
   res.send(`
     <html>
       <body>
         <h1>Search Results</h1>
-        <p>You searched for: ${query}</p>
+        <p>You searched for: ${safeQuery}</p>
         <p>No results found.</p>
       </body>
     </html>
@@ -66,7 +78,11 @@ app.get("/search", (req, res) => {
 // ---------------------------------------------------------------------------
 app.get("/api/files", (req, res) => {
   const filename = req.query.name;
-  const filePath = path.join("/uploads", filename);
+  const uploadsDir = path.resolve("/uploads");
+  const filePath = path.resolve(uploadsDir, filename);
+  if (!filePath.startsWith(uploadsDir + path.sep) && filePath !== uploadsDir) {
+    return res.status(403).json({ error: "Access denied" });
+  }
   try {
     const content = fs.readFileSync(filePath, "utf-8");
     res.send(content);
