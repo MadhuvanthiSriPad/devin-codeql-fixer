@@ -9,7 +9,8 @@
  */
 
 const express = require("express");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
+const rateLimit = require("express-rate-limit");
 const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("better-sqlite3");
@@ -73,13 +74,22 @@ app.get("/api/files", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 4: Command Injection — user input in shell command
+// VULN 4 (FIXED): Command Injection — use execFileSync with array args
 // CodeQL rule: js/command-line-injection
 // ---------------------------------------------------------------------------
-app.post("/api/ping", (req, res) => {
-  const host = req.body.host;
+const pingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: "Too many ping requests, please try again later" },
+});
+
+app.post("/api/ping", pingLimiter, (req, res) => {
+  const host = req.body.host || "";
+  if (!/^[a-zA-Z0-9._-]+$/.test(host)) {
+    return res.status(400).json({ error: "Invalid host" });
+  }
   try {
-    const result = execSync("ping -c 1 " + host).toString();
+    const result = execFileSync("ping", ["-c", "1", host]).toString();
     res.json({ output: result });
   } catch (err) {
     res.status(500).json({ error: "Ping failed" });
@@ -87,12 +97,18 @@ app.post("/api/ping", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 5: Open Redirect — unvalidated redirect target
+// VULN 5 (FIXED): Open Redirect — validate redirect is a safe local path
 // CodeQL rule: js/server-side-unvalidated-url-redirection
 // ---------------------------------------------------------------------------
+const ALLOWED_REDIRECTS = ["/", "/search", "/api/users", "/api/config"];
+
 app.get("/redirect", (req, res) => {
-  const target = req.query.url;
-  res.redirect(target);
+  const target = req.query.url || "/";
+  if (ALLOWED_REDIRECTS.includes(target)) {
+    res.redirect(target);
+  } else {
+    res.status(400).json({ error: "Invalid redirect URL" });
+  }
 });
 
 // ---------------------------------------------------------------------------
