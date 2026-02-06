@@ -9,14 +9,22 @@
  */
 
 const express = require("express");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("better-sqlite3");
 
+const rateLimit = require("express-rate-limit");
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+const pingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: "Too many ping requests, please try again later" },
+});
 
 const db = new sqlite3("app.db");
 db.exec(`
@@ -79,10 +87,10 @@ app.get("/api/files", (req, res) => {
 // VULN 4: Command Injection — user input in shell command
 // CodeQL rule: js/command-line-injection
 // ---------------------------------------------------------------------------
-app.post("/api/ping", (req, res) => {
+app.post("/api/ping", pingLimiter, (req, res) => {
   const host = req.body.host;
   try {
-    const result = execSync("ping -c 1 " + host).toString();
+    const result = execFileSync("ping", ["-c", "1", host]).toString();
     res.json({ output: result });
   } catch (err) {
     res.status(500).json({ error: "Ping failed" });
@@ -93,9 +101,25 @@ app.post("/api/ping", (req, res) => {
 // VULN 5: Open Redirect — unvalidated redirect target
 // CodeQL rule: js/server-side-unvalidated-url-redirection
 // ---------------------------------------------------------------------------
+const ALLOWED_REDIRECT_DOMAINS = [
+  "example.com",
+  "www.example.com",
+];
+
 app.get("/redirect", (req, res) => {
   const target = req.query.url;
-  res.redirect(target);
+  if (target && target.startsWith("/") && !target.startsWith("//")) {
+    return res.redirect(target);
+  }
+  try {
+    const parsed = new URL(target);
+    if (ALLOWED_REDIRECT_DOMAINS.includes(parsed.hostname)) {
+      return res.redirect(target);
+    }
+  } catch (e) {
+    // invalid URL
+  }
+  res.status(400).json({ error: "Invalid redirect target" });
 });
 
 // ---------------------------------------------------------------------------
