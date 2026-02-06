@@ -9,6 +9,7 @@
  */
 
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -17,6 +18,12 @@ const sqlite3 = require("better-sqlite3");
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+});
+app.use(limiter);
 
 const db = new sqlite3("app.db");
 db.exec(`
