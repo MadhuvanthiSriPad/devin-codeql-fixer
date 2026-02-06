@@ -101,23 +101,19 @@ app.post("/api/ping", pingLimiter, (req, res) => {
 // VULN 5: Open Redirect — unvalidated redirect target
 // CodeQL rule: js/server-side-unvalidated-url-redirection
 // ---------------------------------------------------------------------------
-const ALLOWED_REDIRECT_DOMAINS = [
-  "example.com",
-  "www.example.com",
-];
+const ALLOWED_REDIRECTS = {
+  home: "/",
+  dashboard: "/dashboard",
+  profile: "/profile",
+  login: "/login",
+  search: "/search",
+};
 
 app.get("/redirect", (req, res) => {
-  const target = req.query.url;
-  if (target && target.startsWith("/") && !target.startsWith("//")) {
-    return res.redirect(target);
-  }
-  try {
-    const parsed = new URL(target);
-    if (ALLOWED_REDIRECT_DOMAINS.includes(parsed.hostname)) {
-      return res.redirect(target);
-    }
-  } catch (e) {
-    // invalid URL
+  const key = req.query.url;
+  const safeTarget = ALLOWED_REDIRECTS[key];
+  if (safeTarget) {
+    return res.redirect(safeTarget);
   }
   res.status(400).json({ error: "Invalid redirect target" });
 });
