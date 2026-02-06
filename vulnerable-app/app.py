@@ -6,8 +6,10 @@ CodeQL's Python queries will flag. DO NOT deploy to production.
 """
 
 import os
+import re
 import subprocess
 import sqlite3
+from urllib.parse import urlparse
 
 from flask import Flask, request, redirect, render_template_string
 
@@ -42,16 +44,16 @@ def search_users():
 @app.route("/search")
 def search_page():
     query = request.args.get("q", "")
-    html = f"""
+    html = """
     <html>
       <body>
         <h1>Search Results</h1>
-        <p>You searched for: {query}</p>
+        <p>You searched for: {{ query }}</p>
         <p>No results found.</p>
       </body>
     </html>
     """
-    return render_template_string(html)
+    return render_template_string(html, query=query)
 
 
 # ---------------------------------------------------------------------------
@@ -61,9 +63,11 @@ def search_page():
 @app.route("/api/ping", methods=["POST"])
 def ping_host():
     host = request.json.get("host", "")
+    if not re.match(r'^[a-zA-Z0-9._-]+$', host):
+        return {"error": "Invalid host"}, 400
     try:
         result = subprocess.check_output(
-            f"ping -c 1 {host}", shell=True, text=True
+            ["ping", "-c", "1", host], text=True
         )
         return {"output": result}
     except subprocess.CalledProcessError:
@@ -92,6 +96,9 @@ def read_file():
 @app.route("/redirect")
 def open_redirect():
     target = request.args.get("url", "/")
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return redirect("/")
     return redirect(target)
 
 
