@@ -10,11 +10,10 @@
 
 const express = require("express");
 const rateLimit = require("express-rate-limit");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("better-sqlite3");
-const rateLimit = require("express-rate-limit");
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -109,8 +108,11 @@ app.get("/api/files", apiLimiter, (req, res) => {
 // ---------------------------------------------------------------------------
 app.post("/api/ping", (req, res) => {
   const host = req.body.host;
+  if (typeof host !== "string" || !/^[a-zA-Z0-9._-]+$/.test(host)) {
+    return res.status(400).json({ error: "Invalid host" });
+  }
   try {
-    const result = execSync("ping -c 1 " + host).toString();
+    const result = execFileSync("ping", ["-c", "1", host]).toString();
     res.json({ output: result });
   } catch (err) {
     res.status(500).json({ error: "Ping failed" });
@@ -122,8 +124,20 @@ app.post("/api/ping", (req, res) => {
 // CodeQL rule: js/server-side-unvalidated-url-redirection
 // ---------------------------------------------------------------------------
 app.get("/redirect", (req, res) => {
-  const target = req.query.url;
-  res.redirect(target);
+  const target = req.query.url || "/";
+  let parsed;
+  try {
+    parsed = new URL(target, "http://localhost");
+  } catch (e) {
+    return res.redirect("/");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return res.redirect("/");
+  }
+  if (parsed.hostname !== "localhost") {
+    return res.redirect("/");
+  }
+  res.redirect(parsed.pathname + parsed.search + parsed.hash);
 });
 
 // ---------------------------------------------------------------------------
