@@ -9,7 +9,6 @@ import os
 import re
 import subprocess
 import sqlite3
-from urllib.parse import urlparse
 
 from flask import Flask, request, redirect, render_template_string
 
@@ -99,16 +98,21 @@ def read_file():
 # VULN 5: Open Redirect
 # CodeQL rule: py/url-redirection
 # ---------------------------------------------------------------------------
+ALLOWED_REDIRECTS = {
+    "/": "/",
+    "/search": "/search",
+    "/api/users": "/api/users",
+    "/api/files": "/api/files",
+    "/api/config": "/api/config",
+    "/api/ping": "/api/ping",
+}
+
+
 @app.route("/redirect")
 def open_redirect():
     target = request.args.get("url", "/")
-    if not target.startswith("/") or target.startswith("//"):
-        return redirect("/")
-    parsed = urlparse(target)
-    if parsed.scheme or parsed.netloc:
-        return redirect("/")
-    safe_path = parsed.path
-    return redirect(safe_path)
+    safe_url = ALLOWED_REDIRECTS.get(target, "/")
+    return redirect(safe_url)
 
 
 # ---------------------------------------------------------------------------
