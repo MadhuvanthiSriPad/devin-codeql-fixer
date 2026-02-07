@@ -23,7 +23,8 @@ def get_db():
 
 
 # ---------------------------------------------------------------------------
-# VULN 1: SQL Injection — f-string in query
+# VULN 1: SQL Injection — f-string in query (VULNERABLE)
+# CodeQL rule: py/sql-injection
 # ---------------------------------------------------------------------------
 @app.route("/api/users")
 def search_users():
@@ -37,7 +38,8 @@ def search_users():
 
 
 # ---------------------------------------------------------------------------
-# VULN 2: Reflected XSS via template injection
+# VULN 2: Reflected XSS via template injection (VULNERABLE)
+# CodeQL rule: py/reflective-xss
 # ---------------------------------------------------------------------------
 @app.route("/search")
 def search_page():
@@ -71,7 +73,7 @@ def ping_host():
 
 
 # ---------------------------------------------------------------------------
-# VULN 4: Path Traversal — user-controlled file path
+# VULN 4: Path Traversal — user-controlled file path (VULNERABLE)
 # CodeQL rule: py/path-injection
 # ---------------------------------------------------------------------------
 @app.route("/api/files")
@@ -86,7 +88,7 @@ def read_file():
 
 
 # ---------------------------------------------------------------------------
-# VULN 5: Open Redirect
+# VULN 5: Open Redirect — unvalidated redirect target (VULNERABLE)
 # CodeQL rule: py/url-redirection
 # ---------------------------------------------------------------------------
 @app.route("/redirect")
@@ -96,7 +98,7 @@ def open_redirect():
 
 
 # ---------------------------------------------------------------------------
-# VULN 6: Hardcoded credentials
+# VULN 6: Hardcoded Credentials — secrets in source code (VULNERABLE)
 # CodeQL rule: py/hardcoded-credentials
 # ---------------------------------------------------------------------------
 DB_PASSWORD = "super_secret_password_123"

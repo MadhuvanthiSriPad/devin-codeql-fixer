@@ -6,3 +6,6 @@ devin_sessions_report.json
 *.egg-info/
 dist/
 build/
+node_modules/
+*.db
+.DS_Store

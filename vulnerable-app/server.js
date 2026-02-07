@@ -36,7 +36,8 @@ db.exec(`
 `);
 
 // ---------------------------------------------------------------------------
-// VULN 1: SQL Injection — string concatenation in query
+// VULN 1: SQL Injection (FIXED by Devin — parameterized query)
+// Original: "SELECT * FROM users WHERE username LIKE '%" + search + "%'"
 // ---------------------------------------------------------------------------
 app.get("/api/users", (req, res) => {
   const search = req.query.search;
@@ -51,7 +52,8 @@ app.get("/api/users", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 2: Reflected XSS — user input echoed without encoding
+// VULN 2: Reflected XSS (FIXED by Devin — HTML entity encoding)
+// Original: res.send(`... ${query} ...`)  (raw user input in HTML)
 // ---------------------------------------------------------------------------
 function escapeHtml(str) {
   if (typeof str !== "string") return "";
@@ -78,7 +80,8 @@ app.get("/search", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 3: Path Traversal — user-controlled file path
+// VULN 3: Path Traversal (FIXED by Devin — canonical path + allowlist)
+// Original: const filePath = "/uploads/" + filename  (no validation)
 // ---------------------------------------------------------------------------
 app.get("/api/files", (req, res) => {
   const filename = req.query.name;
@@ -96,7 +99,7 @@ app.get("/api/files", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 4: Command Injection — user input in shell command
+// VULN 4: Command Injection — user input in shell command (VULNERABLE)
 // CodeQL rule: js/command-line-injection
 // ---------------------------------------------------------------------------
 app.post("/api/ping", (req, res) => {
@@ -110,7 +113,7 @@ app.post("/api/ping", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 5: Open Redirect — unvalidated redirect target
+// VULN 5: Open Redirect — unvalidated redirect target (VULNERABLE)
 // CodeQL rule: js/server-side-unvalidated-url-redirection
 // ---------------------------------------------------------------------------
 app.get("/redirect", (req, res) => {
@@ -119,7 +122,7 @@ app.get("/redirect", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 6: Hardcoded credentials
+// VULN 6: Hardcoded Credentials — secrets in source code (VULNERABLE)
 // CodeQL rule: js/hardcoded-credentials
 // ---------------------------------------------------------------------------
 const DB_PASSWORD = "super_secret_password_123";
