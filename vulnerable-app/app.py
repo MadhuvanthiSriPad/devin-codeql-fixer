@@ -6,8 +6,10 @@ CodeQL's Python queries will flag. DO NOT deploy to production.
 """
 
 import os
+import re
 import subprocess
 import sqlite3
+from urllib.parse import urlparse
 
 from flask import Flask, request, redirect, render_template_string
 
@@ -30,8 +32,8 @@ def get_db():
 def search_users():
     search = request.args.get("search", "")
     conn = get_db()
-    query = f"SELECT * FROM users WHERE username LIKE '%{search}%'"
-    cursor = conn.execute(query)
+    query = "SELECT * FROM users WHERE username LIKE '%' || ? || '%'"
+    cursor = conn.execute(query, (search,))
     users = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return {"users": users}
@@ -44,16 +46,16 @@ def search_users():
 @app.route("/search")
 def search_page():
     query = request.args.get("q", "")
-    html = f"""
+    html = """
     <html>
       <body>
         <h1>Search Results</h1>
-        <p>You searched for: {query}</p>
+        <p>You searched for: {{ query }}</p>
         <p>No results found.</p>
       </body>
     </html>
     """
-    return render_template_string(html)
+    return render_template_string(html, query=query)
 
 
 # ---------------------------------------------------------------------------
@@ -63,9 +65,11 @@ def search_page():
 @app.route("/api/ping", methods=["POST"])
 def ping_host():
     host = request.json.get("host", "")
+    if not re.match(r'^[a-zA-Z0-9._-]+$', host):
+        return {"error": "Invalid host"}, 400
     try:
         result = subprocess.check_output(
-            f"ping -c 1 {host}", shell=True, text=True
+            ["ping", "-c", "1", host], text=True
         )
         return {"output": result}
     except subprocess.CalledProcessError:
@@ -79,7 +83,13 @@ def ping_host():
 @app.route("/api/files")
 def read_file():
     filename = request.args.get("name", "")
-    file_path = os.path.join("/uploads", filename)
+    safe_name = os.path.basename(filename)
+    if not safe_name:
+        return {"error": "Invalid filename"}, 400
+    base_dir = os.path.realpath("/uploads")
+    file_path = os.path.realpath(os.path.join(base_dir, safe_name))
+    if not file_path.startswith(base_dir + os.sep):
+        return {"error": "Access denied"}, 403
     try:
         with open(file_path) as f:
             return {"content": f.read()}
@@ -94,7 +104,13 @@ def read_file():
 @app.route("/redirect")
 def open_redirect():
     target = request.args.get("url", "/")
-    return redirect(target)
+    if not target.startswith("/") or target.startswith("//"):
+        return redirect("/")
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return redirect("/")
+    safe_path = parsed.path
+    return redirect(safe_path)
 
 
 # ---------------------------------------------------------------------------
@@ -114,4 +130,4 @@ def get_config():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=3000)
+    app.run(debug=False, port=3000)
