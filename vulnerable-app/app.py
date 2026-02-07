@@ -85,7 +85,9 @@ def read_file():
     if not safe_name:
         return {"error": "Invalid filename"}, 400
     base_dir = os.path.realpath("/uploads")
-    file_path = os.path.join(base_dir, safe_name)
+    file_path = os.path.realpath(os.path.join(base_dir, safe_name))
+    if not file_path.startswith(base_dir + os.sep):
+        return {"error": "Access denied"}, 403
     try:
         with open(file_path) as f:
             return {"content": f.read()}
@@ -105,7 +107,8 @@ def open_redirect():
     parsed = urlparse(target)
     if parsed.scheme or parsed.netloc:
         return redirect("/")
-    return redirect(target)
+    safe_path = parsed.path
+    return redirect(safe_path)
 
 
 # ---------------------------------------------------------------------------
