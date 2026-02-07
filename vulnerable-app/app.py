@@ -29,8 +29,8 @@ def get_db():
 def search_users():
     search = request.args.get("search", "")
     conn = get_db()
-    query = f"SELECT * FROM users WHERE username LIKE '%{search}%'"
-    cursor = conn.execute(query)
+    query = "SELECT * FROM users WHERE username LIKE '%' || ? || '%'"
+    cursor = conn.execute(query, (search,))
     users = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return {"users": users}
@@ -77,7 +77,10 @@ def ping_host():
 @app.route("/api/files")
 def read_file():
     filename = request.args.get("name", "")
-    file_path = os.path.join("/uploads", filename)
+    base_dir = os.path.realpath("/uploads")
+    file_path = os.path.realpath(os.path.join(base_dir, filename))
+    if not file_path.startswith(base_dir + os.sep) and file_path != base_dir:
+        return {"error": "Access denied"}, 403
     try:
         with open(file_path) as f:
             return {"content": f.read()}
@@ -112,4 +115,4 @@ def get_config():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=3000)
+    app.run(debug=False, port=3000)
