@@ -14,6 +14,14 @@ const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("better-sqlite3");
+const rateLimit = require("express-rate-limit");
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const app = express();
 app.use(express.json());
@@ -38,7 +46,7 @@ db.exec(`
 // ---------------------------------------------------------------------------
 // VULN 1: SQL Injection — string concatenation in query
 // ---------------------------------------------------------------------------
-app.get("/api/users", (req, res) => {
+app.get("/api/users", apiLimiter, (req, res) => {
   const search = req.query.search;
   try {
     const rows = db.prepare("SELECT * FROM users WHERE username LIKE ?").all(
@@ -80,7 +88,7 @@ app.get("/search", (req, res) => {
 // ---------------------------------------------------------------------------
 // VULN 3: Path Traversal — user-controlled file path
 // ---------------------------------------------------------------------------
-app.get("/api/files", (req, res) => {
+app.get("/api/files", apiLimiter, (req, res) => {
   const filename = req.query.name;
   const baseDir = path.resolve("/uploads");
   const filePath = path.resolve(baseDir, filename);
