@@ -99,6 +99,8 @@ def read_file():
 @app.route("/redirect")
 def open_redirect():
     target = request.args.get("url", "/")
+    if not target.startswith("/") or target.startswith("//"):
+        return redirect("/")
     parsed = urlparse(target)
     if parsed.scheme or parsed.netloc:
         return redirect("/")
