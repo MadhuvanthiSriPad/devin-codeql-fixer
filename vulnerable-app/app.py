@@ -81,10 +81,11 @@ def ping_host():
 @app.route("/api/files")
 def read_file():
     filename = request.args.get("name", "")
+    safe_name = os.path.basename(filename)
+    if not safe_name:
+        return {"error": "Invalid filename"}, 400
     base_dir = os.path.realpath("/uploads")
-    file_path = os.path.realpath(os.path.join(base_dir, filename))
-    if not file_path.startswith(base_dir + os.sep) and file_path != base_dir:
-        return {"error": "Access denied"}, 403
+    file_path = os.path.join(base_dir, safe_name)
     try:
         with open(file_path) as f:
             return {"content": f.read()}
