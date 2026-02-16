@@ -9,10 +9,12 @@
  */
 
 const express = require("express");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("better-sqlite3");
+
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 app.use(express.json());
@@ -79,10 +81,17 @@ app.get("/api/files", (req, res) => {
 // VULN 4: Command Injection — user input in shell command
 // CodeQL rule: js/command-line-injection
 // ---------------------------------------------------------------------------
-app.post("/api/ping", (req, res) => {
+const pingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.post("/api/ping", pingLimiter, (req, res) => {
   const host = req.body.host;
   try {
-    const result = execSync("ping -c 1 " + host).toString();
+    const result = execFileSync("ping", ["-c", "1", host]).toString();
     res.json({ output: result });
   } catch (err) {
     res.status(500).json({ error: "Ping failed" });
@@ -94,8 +103,12 @@ app.post("/api/ping", (req, res) => {
 // CodeQL rule: js/server-side-unvalidated-url-redirection
 // ---------------------------------------------------------------------------
 app.get("/redirect", (req, res) => {
-  const target = req.query.url;
-  res.redirect(target);
+  const target = req.query.url || "/";
+  const url = new URL(target, `${req.protocol}://${req.get("host")}`);
+  if (url.origin !== `${req.protocol}://${req.get("host")}`) {
+    return res.status(400).json({ error: "Open redirects are not allowed" });
+  }
+  res.redirect(url.pathname + url.search + url.hash);
 });
 
 // ---------------------------------------------------------------------------
