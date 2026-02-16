@@ -17,7 +17,7 @@ on:
     - cron: "0 9 * * 1"
 
 permissions:
-  contents: read
+  contents: write
   security-events: read
   pull-requests: read
 

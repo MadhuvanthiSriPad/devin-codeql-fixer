@@ -15,13 +15,6 @@ const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("better-sqlite3");
 
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -29,6 +22,8 @@ app.use(express.urlencoded({ extended: true }));
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use(limiter);
 
@@ -46,7 +41,7 @@ db.exec(`
 // VULN 1: SQL Injection (FIXED by Devin — parameterized query)
 // Original: "SELECT * FROM users WHERE username LIKE '%" + search + "%'"
 // ---------------------------------------------------------------------------
-app.get("/api/users", apiLimiter, (req, res) => {
+app.get("/api/users", (req, res) => {
   const search = req.query.search;
   try {
     const rows = db.prepare("SELECT * FROM users WHERE username LIKE ?").all(
@@ -90,7 +85,7 @@ app.get("/search", (req, res) => {
 // VULN 3: Path Traversal (FIXED by Devin — canonical path + allowlist)
 // Original: const filePath = "/uploads/" + filename  (no validation)
 // ---------------------------------------------------------------------------
-app.get("/api/files", apiLimiter, (req, res) => {
+app.get("/api/files", (req, res) => {
   const filename = req.query.name;
   const baseDir = path.resolve("/uploads");
   const filePath = path.resolve(baseDir, filename);
@@ -106,8 +101,8 @@ app.get("/api/files", apiLimiter, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 4: Command Injection — user input in shell command (VULNERABLE)
-// CodeQL rule: js/command-line-injection
+// VULN 4: Command Injection (FIXED by Devin — execFileSync + regex allowlist)
+// Original: execSync("ping -c 1 " + host)  (shell interpolation)
 // ---------------------------------------------------------------------------
 app.post("/api/ping", (req, res) => {
   const host = req.body.host;
@@ -123,8 +118,8 @@ app.post("/api/ping", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 5: Open Redirect — unvalidated redirect target (VULNERABLE)
-// CodeQL rule: js/server-side-unvalidated-url-redirection
+// VULN 5: Open Redirect (FIXED by Devin — URL parsing + hostname validation)
+// Original: res.redirect(req.query.url)  (unvalidated redirect)
 // ---------------------------------------------------------------------------
 app.get("/redirect", (req, res) => {
   const target = req.query.url || "/";

@@ -172,11 +172,12 @@ def get_inflight_branch_ids(token: str, repo: str) -> set[str]:
     if resp.status_code != 200:
         return branch_ids
 
+    expected_prefix = f"{BRANCH_PREFIX}-"
     for ref in resp.json():
         branch_name = ref.get("ref", "").replace("refs/heads/", "")
-        suffix = branch_name.replace(f"{BRANCH_PREFIX}-", "")
-        if not suffix:
+        if not branch_name.startswith(expected_prefix):
             continue
+        suffix = branch_name[len(expected_prefix):]
 
         pr_resp = requests.get(
             f"{GITHUB_API}/repos/{repo}/pulls",
@@ -185,9 +186,10 @@ def get_inflight_branch_ids(token: str, repo: str) -> set[str]:
             timeout=30,
         )
 
+        prs = pr_resp.json() if pr_resp.status_code == 200 else []
         should_skip = False
-        if pr_resp.status_code == 200 and pr_resp.json():
-            pr = pr_resp.json()[0]
+        if prs:
+            pr = prs[0]
             pr_num = pr.get("number")
             if pr.get("merged_at"):
                 log.info("  Branch %s has merged PR #%d — skipping", branch_name, pr_num)
@@ -243,44 +245,48 @@ def build_prompt(batch: list[dict], batch_id: str, repo: str) -> str:
     if len(pr_title) > 256:
         pr_title = pr_title[:253] + "..."
 
-    return f"""You are working on the repository: https://github.com/{repo}
+    return f"""Repository: https://github.com/{repo}
 
-## Security Alerts To Fix
+## Alerts
 
-The following {len(batch)} CodeQL security alert(s) need to be fixed:
+Fix these {len(batch)} CodeQL alert(s):
 
 {alerts_block}
 
-## Root-Cause Fixing Requirements
+## Fix Rules
 
-Do NOT apply shallow fixes. For each alert you MUST:
+For every alert, trace the tainted data from source to sink and apply the
+industry-standard remediation:
 
-1. **Understand the vulnerability class** — Read the CodeQL rule docs.
-2. **Trace the data flow** — Follow tainted data from source to sink.
-   Fix at the right place: input validation, safe APIs, or output encoding.
-3. **Do NOT use shallow approaches** (these will be rejected):
-   - `// codeql-ignore` or `@SuppressWarnings` annotations
-   - try/catch without fixing the underlying issue
-   - No-op validation that doesn't actually sanitize
-4. **Apply the industry-standard fix**:
-   - SQL Injection -> parameterized queries
-   - XSS -> context-appropriate output encoding
-   - Path Traversal -> canonical path resolution + allowlist
-   - Command Injection -> array-based exec, no shell interpolation
-   - Hardcoded Credentials -> environment variables or secret managers
+| Vulnerability         | Required Fix                                      |
+|-----------------------|---------------------------------------------------|
+| SQL Injection         | Parameterized queries / prepared statements       |
+| XSS                   | Context-appropriate output encoding               |
+| Path Traversal        | Canonical path resolution + directory allowlist    |
+| Command Injection     | Array-based exec, no shell interpolation           |
+| Hardcoded Credentials | Environment variables or secret manager            |
 
-## Branch & PR Requirements
+**Rejected patterns** (PR will be closed if these are used):
+- Suppress annotations (`codeql-ignore`, `@SuppressWarnings`, `noinspection`)
+- Bare try/catch that swallows the vulnerability
+- No-op validation that does not actually sanitize input
 
-1. Create branch: `{BRANCH_PREFIX}-{batch_id}`
-2. Make the minimal, correct fix for each alert.
-3. Run tests and fix any failures your changes cause.
-4. Run the linter/formatter if configured.
-5. Commit with a descriptive message, e.g.:
-   "fix: use parameterized query to prevent SQL injection (alert #12)"
-6. Open a PR targeting the default branch with:
-   - Title: "{pr_title}"
-   - Body with: Summary, per-alert details (vulnerability, root cause, fix, verification), and testing results.
-   - At the end of the PR body, add: `<!-- codeql-alert-ids: {alert_id_csv} -->`"""
+## Delivery
+
+1. Branch: `{BRANCH_PREFIX}-{batch_id}`
+2. One focused commit per alert. Message format:
+   `fix: <what was fixed> (alert #N)`
+3. Run the full test suite and linter. Fix any failures your changes introduce.
+4. Verify the CodeQL alert is resolved — the fix must eliminate the flagged
+   data-flow path, not just suppress it.
+5. Open a PR targeting the default branch. **Do NOT merge the PR.**
+   - Title: `{pr_title}`
+   - Body must include:
+     - Summary of changes
+     - Per-alert breakdown: vulnerability class, root cause, fix applied
+     - Test / linter results
+   - Append this hidden marker as the last line of the body:
+     `<!-- codeql-alert-ids: {alert_id_csv} -->`"""
 
 
 def create_devin_session(token: str, prompt: str, batch_id: str) -> dict:
@@ -339,7 +345,7 @@ def _write_report(records: list[dict]) -> None:
     report_path = "devin_sessions_report.json"
     with open(report_path, "w") as f:
         json.dump(
-            {"sessions": records, "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ")},
+            {"sessions": records, "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
             f, indent=2,
         )
     log.info("Report written to %s", report_path)
@@ -389,7 +395,7 @@ def main() -> None:
     inflight_branches = get_inflight_branch_ids(gh_token, repo)
 
     session_records: list[dict] = []
-    for batch in batches:
+    for i, batch in enumerate(batches):
         alert_nums = [a.get("number", 0) for a in batch]
         batch_id = stable_batch_id(alert_nums)
 
@@ -404,7 +410,7 @@ def main() -> None:
         record["rule_summary"] = human_readable_rules(batch)
         session_records.append(record)
 
-        if batch != batches[-1]:
+        if i < len(batches) - 1:
             time.sleep(2)
 
     if not session_records:
