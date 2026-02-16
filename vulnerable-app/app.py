@@ -6,6 +6,7 @@ CodeQL's Python queries will flag. DO NOT deploy to production.
 """
 
 import os
+import re
 import subprocess
 import sqlite3
 
@@ -63,9 +64,11 @@ def search_page():
 @app.route("/api/ping", methods=["POST"])
 def ping_host():
     host = request.json.get("host", "")
+    if not re.match(r'^[a-zA-Z0-9._-]+$', host):
+        return {"error": "Invalid host"}, 400
     try:
         result = subprocess.check_output(
-            f"ping -c 1 {host}", shell=True, text=True
+            ["ping", "-c", "1", host], text=True
         )
         return {"output": result}
     except subprocess.CalledProcessError:
