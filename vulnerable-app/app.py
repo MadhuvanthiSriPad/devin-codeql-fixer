@@ -6,10 +6,8 @@ CodeQL's Python queries will flag. DO NOT deploy to production.
 """
 
 import os
-import re
 import subprocess
 import sqlite3
-from urllib.parse import urlparse
 
 from flask import Flask, request, redirect, render_template_string
 
@@ -25,37 +23,37 @@ def get_db():
 
 
 # ---------------------------------------------------------------------------
-# VULN 1: SQL Injection — f-string in query (VULNERABLE)
+# VULN 1: SQL Injection — f-string in query
 # CodeQL rule: py/sql-injection
 # ---------------------------------------------------------------------------
 @app.route("/api/users")
 def search_users():
     search = request.args.get("search", "")
     conn = get_db()
-    query = "SELECT * FROM users WHERE username LIKE '%' || ? || '%'"
-    cursor = conn.execute(query, (search,))
+    query = f"SELECT * FROM users WHERE username LIKE '%{search}%'"
+    cursor = conn.execute(query)
     users = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return {"users": users}
 
 
 # ---------------------------------------------------------------------------
-# VULN 2: Reflected XSS via template injection (VULNERABLE)
+# VULN 2: Reflected XSS via template injection
 # CodeQL rule: py/reflective-xss
 # ---------------------------------------------------------------------------
 @app.route("/search")
 def search_page():
     query = request.args.get("q", "")
-    html = """
+    html = f"""
     <html>
       <body>
         <h1>Search Results</h1>
-        <p>You searched for: {{ query }}</p>
+        <p>You searched for: {query}</p>
         <p>No results found.</p>
       </body>
     </html>
     """
-    return render_template_string(html, query=query)
+    return render_template_string(html)
 
 
 # ---------------------------------------------------------------------------
@@ -65,11 +63,9 @@ def search_page():
 @app.route("/api/ping", methods=["POST"])
 def ping_host():
     host = request.json.get("host", "")
-    if not re.match(r'^[a-zA-Z0-9._-]+$', host):
-        return {"error": "Invalid host"}, 400
     try:
         result = subprocess.check_output(
-            ["ping", "-c", "1", host], text=True
+            f"ping -c 1 {host}", shell=True, text=True
         )
         return {"output": result}
     except subprocess.CalledProcessError:
@@ -77,19 +73,13 @@ def ping_host():
 
 
 # ---------------------------------------------------------------------------
-# VULN 4: Path Traversal — user-controlled file path (VULNERABLE)
+# VULN 4: Path Traversal — user-controlled file path
 # CodeQL rule: py/path-injection
 # ---------------------------------------------------------------------------
 @app.route("/api/files")
 def read_file():
     filename = request.args.get("name", "")
-    safe_name = os.path.basename(filename)
-    if not safe_name:
-        return {"error": "Invalid filename"}, 400
-    base_dir = os.path.realpath("/uploads")
-    file_path = os.path.realpath(os.path.join(base_dir, safe_name))
-    if not file_path.startswith(base_dir + os.sep):
-        return {"error": "Access denied"}, 403
+    file_path = os.path.join("/uploads", filename)
     try:
         with open(file_path) as f:
             return {"content": f.read()}
@@ -98,23 +88,17 @@ def read_file():
 
 
 # ---------------------------------------------------------------------------
-# VULN 5: Open Redirect — unvalidated redirect target (VULNERABLE)
+# VULN 5: Open Redirect
 # CodeQL rule: py/url-redirection
 # ---------------------------------------------------------------------------
 @app.route("/redirect")
 def open_redirect():
     target = request.args.get("url", "/")
-    if not target.startswith("/") or target.startswith("//"):
-        return redirect("/")
-    parsed = urlparse(target)
-    if parsed.scheme or parsed.netloc:
-        return redirect("/")
-    safe_path = parsed.path
-    return redirect(safe_path)
+    return redirect(target)
 
 
 # ---------------------------------------------------------------------------
-# VULN 6: Hardcoded Credentials — secrets in source code (VULNERABLE)
+# VULN 6: Hardcoded credentials
 # CodeQL rule: py/hardcoded-credentials
 # ---------------------------------------------------------------------------
 DB_PASSWORD = "super_secret_password_123"
@@ -130,4 +114,4 @@ def get_config():
 
 
 if __name__ == "__main__":
-    app.run(debug=False, port=3000)
+    app.run(debug=True, port=3000)

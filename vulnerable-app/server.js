@@ -9,8 +9,7 @@
  */
 
 const express = require("express");
-const rateLimit = require("express-rate-limit");
-const { execFileSync } = require("child_process");
+const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("better-sqlite3");
@@ -18,14 +17,6 @@ const sqlite3 = require("better-sqlite3");
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(limiter);
 
 const db = new sqlite3("app.db");
 db.exec(`
@@ -38,15 +29,14 @@ db.exec(`
 `);
 
 // ---------------------------------------------------------------------------
-// VULN 1: SQL Injection (FIXED by Devin — parameterized query)
-// Original: "SELECT * FROM users WHERE username LIKE '%" + search + "%'"
+// VULN 1: SQL Injection — string concatenation in query
+// CodeQL rule: js/sql-injection
 // ---------------------------------------------------------------------------
 app.get("/api/users", (req, res) => {
   const search = req.query.search;
+  const query = "SELECT * FROM users WHERE username LIKE '%" + search + "%'";
   try {
-    const rows = db.prepare("SELECT * FROM users WHERE username LIKE ?").all(
-      "%" + search + "%"
-    );
+    const rows = db.prepare(query).all();
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -54,27 +44,16 @@ app.get("/api/users", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 2: Reflected XSS (FIXED by Devin — HTML entity encoding)
-// Original: res.send(`... ${query} ...`)  (raw user input in HTML)
+// VULN 2: Reflected XSS — user input echoed without encoding
+// CodeQL rule: js/reflected-xss
 // ---------------------------------------------------------------------------
-function escapeHtml(str) {
-  if (typeof str !== "string") return "";
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
 app.get("/search", (req, res) => {
   const query = req.query.q;
-  const safeQuery = escapeHtml(query);
   res.send(`
     <html>
       <body>
         <h1>Search Results</h1>
-        <p>You searched for: ${safeQuery}</p>
+        <p>You searched for: ${query}</p>
         <p>No results found.</p>
       </body>
     </html>
@@ -82,16 +61,12 @@ app.get("/search", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 3: Path Traversal (FIXED by Devin — canonical path + allowlist)
-// Original: const filePath = "/uploads/" + filename  (no validation)
+// VULN 3: Path Traversal — user-controlled file path
+// CodeQL rule: js/path-injection
 // ---------------------------------------------------------------------------
 app.get("/api/files", (req, res) => {
   const filename = req.query.name;
-  const baseDir = path.resolve("/uploads");
-  const filePath = path.resolve(baseDir, filename);
-  if (!filePath.startsWith(baseDir + path.sep)) {
-    return res.status(403).json({ error: "Access denied" });
-  }
+  const filePath = path.join("/uploads", filename);
   try {
     const content = fs.readFileSync(filePath, "utf-8");
     res.send(content);
@@ -101,16 +76,13 @@ app.get("/api/files", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 4: Command Injection (FIXED by Devin — execFileSync + regex allowlist)
-// Original: execSync("ping -c 1 " + host)  (shell interpolation)
+// VULN 4: Command Injection — user input in shell command
+// CodeQL rule: js/command-line-injection
 // ---------------------------------------------------------------------------
 app.post("/api/ping", (req, res) => {
   const host = req.body.host;
-  if (typeof host !== "string" || !/^[a-zA-Z0-9._-]+$/.test(host)) {
-    return res.status(400).json({ error: "Invalid host" });
-  }
   try {
-    const result = execFileSync("ping", ["-c", "1", host]).toString();
+    const result = execSync("ping -c 1 " + host).toString();
     res.json({ output: result });
   } catch (err) {
     res.status(500).json({ error: "Ping failed" });
@@ -118,28 +90,16 @@ app.post("/api/ping", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// VULN 5: Open Redirect (FIXED by Devin — URL parsing + hostname validation)
-// Original: res.redirect(req.query.url)  (unvalidated redirect)
+// VULN 5: Open Redirect — unvalidated redirect target
+// CodeQL rule: js/server-side-unvalidated-url-redirection
 // ---------------------------------------------------------------------------
 app.get("/redirect", (req, res) => {
-  const target = req.query.url || "/";
-  let parsed;
-  try {
-    parsed = new URL(target, "http://localhost");
-  } catch (e) {
-    return res.redirect("/");
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return res.redirect("/");
-  }
-  if (parsed.hostname !== "localhost") {
-    return res.redirect("/");
-  }
-  res.redirect(parsed.pathname + parsed.search + parsed.hash);
+  const target = req.query.url;
+  res.redirect(target);
 });
 
 // ---------------------------------------------------------------------------
-// VULN 6: Hardcoded Credentials — secrets in source code (VULNERABLE)
+// VULN 6: Hardcoded credentials
 // CodeQL rule: js/hardcoded-credentials
 // ---------------------------------------------------------------------------
 const DB_PASSWORD = "super_secret_password_123";
