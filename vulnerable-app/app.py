@@ -30,8 +30,10 @@ def get_db():
 def search_users():
     search = request.args.get("search", "")
     conn = get_db()
-    query = f"SELECT * FROM users WHERE username LIKE '%{search}%'"
-    cursor = conn.execute(query)
+    cursor = conn.execute(
+        "SELECT * FROM users WHERE username LIKE ?",
+        ("%" + search + "%",),
+    )
     users = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return {"users": users}
