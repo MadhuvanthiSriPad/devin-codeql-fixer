@@ -12,7 +12,11 @@ import sys
 import json
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 GITHUB_API = "https://api.github.com"
 DEVIN_API = "https://api.devin.ai/v1"
@@ -52,6 +56,21 @@ def stable_batch_id(alert_numbers: list[int]) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:8]
 
 
+def _retry_session() -> requests.Session:
+    """Return a requests session with automatic retries on transient errors."""
+    session = requests.Session()
+    retries = Retry(
+        total=3,
+        backoff_factor=2,
+        status_forcelist=[429, 502, 503, 504],
+        allowed_methods=["GET", "POST", "DELETE"],
+    )
+    session.mount("https://", HTTPAdapter(max_retries=retries))
+    return session
+
+http = _retry_session()
+
+
 def github_headers(token: str) -> dict:
     return {
         "Authorization": f"Bearer {token}",
@@ -69,13 +88,12 @@ def devin_headers(token: str) -> dict:
 
 
 def human_readable_rules(alerts: list[dict]) -> str:
-    seen = []
+    names: dict[str, None] = {}
     for a in alerts:
         rule_id = a.get("rule", {}).get("id", "unknown")
         name = rule_id.split("/")[-1].replace("-", " ").title()
-        if name not in seen:
-            seen.append(name)
-    return ", ".join(seen)
+        names.setdefault(name, None)
+    return ", ".join(names)
 
 
 def fetch_codeql_alerts(token: str, repo: str, severity_filter: str) -> list[dict]:
@@ -87,7 +105,7 @@ def fetch_codeql_alerts(token: str, repo: str, severity_filter: str) -> list[dic
 
     while True:
         log.info("Fetching alerts page %d ...", params["page"])
-        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        resp = http.get(url, headers=headers, params=params, timeout=30)
 
         if resp.status_code == 404:
             log.warning("Code scanning not enabled or no alerts for %s.", repo)
@@ -126,7 +144,7 @@ def get_inflight_alert_ids(token: str, repo: str) -> set[int]:
     params: dict = {"state": "open", "per_page": 100, "page": 1}
 
     while True:
-        resp = requests.get(pr_url, headers=headers, params=params, timeout=30)
+        resp = http.get(pr_url, headers=headers, params=params, timeout=30)
         resp.raise_for_status()
         prs = resp.json()
         if not prs:
@@ -168,7 +186,7 @@ def get_inflight_branch_ids(token: str, repo: str) -> set[str]:
     owner = repo.split("/")[0]
 
     ref_url = f"{GITHUB_API}/repos/{repo}/git/matching-refs/heads/{BRANCH_PREFIX}"
-    resp = requests.get(ref_url, headers=headers, timeout=30)
+    resp = http.get(ref_url, headers=headers, timeout=30)
     if resp.status_code != 200:
         return branch_ids
 
@@ -179,7 +197,7 @@ def get_inflight_branch_ids(token: str, repo: str) -> set[str]:
             continue
         suffix = branch_name[len(expected_prefix):]
 
-        pr_resp = requests.get(
+        pr_resp = http.get(
             f"{GITHUB_API}/repos/{repo}/pulls",
             headers=headers,
             params={"head": f"{owner}:{branch_name}", "state": "all"},
@@ -205,7 +223,7 @@ def get_inflight_branch_ids(token: str, repo: str) -> set[str]:
         if should_skip:
             branch_ids.add(suffix)
         else:
-            del_resp = requests.delete(
+            del_resp = http.delete(
                 f"{GITHUB_API}/repos/{repo}/git/refs/heads/{branch_name}",
                 headers=headers,
                 timeout=30,
@@ -291,7 +309,7 @@ industry-standard remediation:
 
 def create_devin_session(token: str, prompt: str, batch_id: str) -> dict:
     log.info("Creating Devin session for batch %s ...", batch_id)
-    resp = requests.post(
+    resp = http.post(
         f"{DEVIN_API}/sessions",
         headers=devin_headers(token),
         json={"prompt": prompt},
@@ -322,7 +340,7 @@ def poll_session(token: str, session_id: str, timeout_minutes: int = 30) -> str:
 
     while time.time() < deadline:
         try:
-            resp = requests.get(url, headers=headers, timeout=30)
+            resp = http.get(url, headers=headers, timeout=30)
             resp.raise_for_status()
             data = resp.json()
             status = data.get("status_enum", data.get("status", "unknown"))
@@ -418,9 +436,15 @@ def main() -> None:
         _write_report([])
         return
 
-    log.info("Polling %d session(s) ...", len(session_records))
-    for record in session_records:
-        record["status"] = poll_session(devin_token, record["session_id"])
+    log.info("Polling %d session(s) concurrently ...", len(session_records))
+    with ThreadPoolExecutor(max_workers=len(session_records)) as pool:
+        futures = {
+            pool.submit(poll_session, devin_token, r["session_id"]): r
+            for r in session_records
+        }
+        for future in as_completed(futures):
+            record = futures[future]
+            record["status"] = future.result()
 
     _write_report(session_records)
 

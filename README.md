@@ -123,6 +123,7 @@ The repo includes a `vulnerable-app/` directory with **intentionally vulnerable*
 │   └── codeql-fixer.yml             # Dispatches fixes to Devin
 ├── scripts/
 │   ├── fix_codeql_issues.py         # Core automation (fetch, dedup, batch, dispatch)
+│   ├── test_fix_codeql_issues.py    # Unit tests (pytest)
 │   └── requirements.txt             # Python dependencies
 ├── vulnerable-app/
 │   ├── server.js                    # Intentionally vulnerable Express app
