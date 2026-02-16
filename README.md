@@ -83,7 +83,7 @@ A GitHub Actions pipeline that fetches open CodeQL alerts, intelligently batches
 
 ---
 
-## Demo: Vulnerable App
+## Vulnerable App
 
 The repo includes a `vulnerable-app/` directory with **intentionally vulnerable** code (JavaScript + Python) that CodeQL flags. This lets you test the full end-to-end flow.
 
@@ -101,7 +101,7 @@ The repo includes a `vulnerable-app/` directory with **intentionally vulnerable*
 ### End-to-End Test
 
 1. Push the repo to GitHub
-2. Wait for **CodeQL Analysis** workflow to complete (~5 min)
+2. Wait for **CodeQL Analysis** workflow to complete
 3. Check **Security** tab > Code scanning alerts — you should see 10+ alerts
 4. Run **Fix CodeQL Issues with Devin** from Actions tab
 5. Watch Devin sessions work (links appear in the Actions run summary)
