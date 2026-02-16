@@ -103,8 +103,12 @@ app.post("/api/ping", pingLimiter, (req, res) => {
 // CodeQL rule: js/server-side-unvalidated-url-redirection
 // ---------------------------------------------------------------------------
 app.get("/redirect", (req, res) => {
-  const target = req.query.url;
-  res.redirect(target);
+  const target = req.query.url || "/";
+  const url = new URL(target, `${req.protocol}://${req.get("host")}`);
+  if (url.origin !== `${req.protocol}://${req.get("host")}`) {
+    return res.status(400).json({ error: "Open redirects are not allowed" });
+  }
+  res.redirect(url.pathname + url.search + url.hash);
 });
 
 // ---------------------------------------------------------------------------
