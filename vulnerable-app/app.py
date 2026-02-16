@@ -9,6 +9,7 @@ import os
 import subprocess
 import sqlite3
 
+from markupsafe import escape
 from flask import Flask, request, redirect, render_template_string
 
 app = Flask(__name__)
@@ -46,16 +47,17 @@ def search_users():
 @app.route("/search")
 def search_page():
     query = request.args.get("q", "")
-    html = f"""
+    safe_query = escape(query)
+    html = """
     <html>
       <body>
         <h1>Search Results</h1>
-        <p>You searched for: {query}</p>
+        <p>You searched for: {{ q }}</p>
         <p>No results found.</p>
       </body>
     </html>
     """
-    return render_template_string(html)
+    return render_template_string(html, q=safe_query)
 
 
 # ---------------------------------------------------------------------------
