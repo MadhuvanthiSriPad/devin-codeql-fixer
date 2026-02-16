@@ -307,12 +307,15 @@ industry-standard remediation:
      `<!-- codeql-alert-ids: {alert_id_csv} -->`"""
 
 
-def create_devin_session(token: str, prompt: str, batch_id: str) -> dict:
+def create_devin_session(token: str, prompt: str, batch_id: str, title: str = "") -> dict:
     log.info("Creating Devin session for batch %s ...", batch_id)
+    body: dict = {"prompt": prompt}
+    if title:
+        body["title"] = title
     resp = http.post(
         f"{DEVIN_API}/sessions",
         headers=devin_headers(token),
-        json={"prompt": prompt},
+        json=body,
         timeout=60,
     )
     if not resp.ok:
@@ -421,11 +424,15 @@ def main() -> None:
             log.info("Batch %s already has active branch — skipping", batch_id)
             continue
 
+        rule_summary = human_readable_rules(batch)
+        alert_id_csv = ", ".join(f"#{n}" for n in alert_nums)
+        session_title = f"Fix {rule_summary} ({alert_id_csv})"
+
         prompt = build_prompt(batch, batch_id, repo)
-        record = create_devin_session(devin_token, prompt, batch_id)
+        record = create_devin_session(devin_token, prompt, batch_id, title=session_title)
         record["alert_count"] = len(batch)
         record["alert_ids"] = alert_nums
-        record["rule_summary"] = human_readable_rules(batch)
+        record["rule_summary"] = rule_summary
         session_records.append(record)
 
         if i < len(batches) - 1:
