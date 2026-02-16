@@ -65,7 +65,7 @@ def ping_host():
     host = request.json.get("host", "")
     try:
         result = subprocess.check_output(
-            f"ping -c 1 {host}", shell=True, text=True
+            ["ping", "-c", "1", host], text=True
         )
         return {"output": result}
     except subprocess.CalledProcessError:
