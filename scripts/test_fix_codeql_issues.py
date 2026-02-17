@@ -8,6 +8,8 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from fix_codeql_issues import (
+    validate_github_token,
+    validate_devin_token,
     severity_meets_threshold,
     stable_batch_id,
     human_readable_rules,
@@ -16,6 +18,126 @@ from fix_codeql_issues import (
     get_inflight_alert_ids,
     BRANCH_PREFIX,
 )
+
+
+# ---------------------------------------------------------------------------
+# validate_github_token
+# ---------------------------------------------------------------------------
+
+class TestValidateGitHubToken:
+
+    def test_empty_token_exits(self):
+        with pytest.raises(SystemExit) as exc_info:
+            validate_github_token("")
+        assert exc_info.value.code == 1
+
+    def test_whitespace_token_exits(self):
+        with pytest.raises(SystemExit) as exc_info:
+            validate_github_token("   ")
+        assert exc_info.value.code == 1
+
+    @patch("fix_codeql_issues.requests.get")
+    def test_401_exits(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+        mock_get.return_value = mock_resp
+        with pytest.raises(SystemExit) as exc_info:
+            validate_github_token("bad-token")
+        assert exc_info.value.code == 1
+
+    @patch("fix_codeql_issues.requests.get")
+    def test_403_exits(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 403
+        mock_get.return_value = mock_resp
+        with pytest.raises(SystemExit) as exc_info:
+            validate_github_token("limited-token")
+        assert exc_info.value.code == 1
+
+    @patch("fix_codeql_issues.requests.get")
+    def test_unexpected_status_exits(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_get.return_value = mock_resp
+        with pytest.raises(SystemExit) as exc_info:
+            validate_github_token("some-token")
+        assert exc_info.value.code == 1
+
+    @patch("fix_codeql_issues.requests.get")
+    def test_network_error_exits(self, mock_get):
+        import requests as req
+        mock_get.side_effect = req.ConnectionError("Connection refused")
+        with pytest.raises(SystemExit) as exc_info:
+            validate_github_token("some-token")
+        assert exc_info.value.code == 1
+
+    @patch("fix_codeql_issues.requests.get")
+    def test_valid_token_succeeds(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"login": "testuser"}
+        mock_get.return_value = mock_resp
+        validate_github_token("ghp_validtoken")
+
+
+# ---------------------------------------------------------------------------
+# validate_devin_token
+# ---------------------------------------------------------------------------
+
+class TestValidateDevinToken:
+
+    def test_empty_token_exits(self):
+        with pytest.raises(SystemExit) as exc_info:
+            validate_devin_token("")
+        assert exc_info.value.code == 1
+
+    def test_whitespace_token_exits(self):
+        with pytest.raises(SystemExit) as exc_info:
+            validate_devin_token("   ")
+        assert exc_info.value.code == 1
+
+    @patch("fix_codeql_issues.requests.get")
+    def test_401_exits(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+        mock_get.return_value = mock_resp
+        with pytest.raises(SystemExit) as exc_info:
+            validate_devin_token("bad-token")
+        assert exc_info.value.code == 1
+
+    @patch("fix_codeql_issues.requests.get")
+    def test_403_exits(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 403
+        mock_get.return_value = mock_resp
+        with pytest.raises(SystemExit) as exc_info:
+            validate_devin_token("bad-token")
+        assert exc_info.value.code == 1
+
+    @patch("fix_codeql_issues.requests.get")
+    def test_unexpected_status_exits(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_get.return_value = mock_resp
+        with pytest.raises(SystemExit) as exc_info:
+            validate_devin_token("some-token")
+        assert exc_info.value.code == 1
+
+    @patch("fix_codeql_issues.requests.get")
+    def test_network_error_exits(self, mock_get):
+        import requests as req
+        mock_get.side_effect = req.ConnectionError("Connection refused")
+        with pytest.raises(SystemExit) as exc_info:
+            validate_devin_token("some-token")
+        assert exc_info.value.code == 1
+
+    @patch("fix_codeql_issues.requests.get")
+    def test_valid_token_succeeds(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"sessions": []}
+        mock_get.return_value = mock_resp
+        validate_devin_token("valid-devin-token")
 
 
 # ---------------------------------------------------------------------------
