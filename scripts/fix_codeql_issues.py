@@ -62,6 +62,82 @@ def env(name: str, default: str | None = None) -> str:
     return value
 
 
+def validate_github_token(token: str) -> None:
+    """Validate the GitHub token by calling GET /user. Exit on failure."""
+    if not token or not token.strip():
+        log.error(
+            "GITHUB_TOKEN is empty. Provide a valid GitHub Personal Access "
+            "Token with 'repo' and 'security_events' scopes."
+        )
+        sys.exit(1)
+    try:
+        resp = requests.get(
+            f"{GITHUB_API}/user",
+            headers=github_headers(token),
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        log.error("Failed to connect to GitHub API: %s", exc)
+        sys.exit(1)
+    if resp.status_code == 401:
+        log.error(
+            "GITHUB_TOKEN is invalid or expired (HTTP 401). "
+            "Generate a new token at https://github.com/settings/tokens "
+            "with 'repo' and 'security_events' scopes."
+        )
+        sys.exit(1)
+    if resp.status_code == 403:
+        log.error(
+            "GITHUB_TOKEN lacks required permissions (HTTP 403). "
+            "Ensure the token has 'repo' and 'security_events' scopes."
+        )
+        sys.exit(1)
+    if resp.status_code != 200:
+        log.error(
+            "Unexpected response from GitHub API (HTTP %d). "
+            "Verify your GITHUB_TOKEN is correct.",
+            resp.status_code,
+        )
+        sys.exit(1)
+    user = resp.json().get("login", "unknown")
+    log.info("GitHub token validated — authenticated as '%s'", user)
+
+
+def validate_devin_token(token: str) -> None:
+    """Validate the Devin API token by calling GET /sessions. Exit on failure."""
+    if not token or not token.strip():
+        log.error(
+            "DEVIN_API_TOKEN is empty. Provide a valid Devin API token "
+            "from https://app.devin.ai/settings."
+        )
+        sys.exit(1)
+    try:
+        resp = requests.get(
+            f"{DEVIN_API}/sessions",
+            headers=devin_headers(token),
+            params={"limit": 1},
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        log.error("Failed to connect to Devin API: %s", exc)
+        sys.exit(1)
+    if resp.status_code in (401, 403):
+        log.error(
+            "DEVIN_API_TOKEN is invalid or expired (HTTP %d). "
+            "Generate a new token at https://app.devin.ai/settings.",
+            resp.status_code,
+        )
+        sys.exit(1)
+    if resp.status_code >= 400:
+        log.error(
+            "Unexpected response from Devin API (HTTP %d). "
+            "Verify your DEVIN_API_TOKEN is correct.",
+            resp.status_code,
+        )
+        sys.exit(1)
+    log.info("Devin API token validated successfully")
+
+
 def severity_meets_threshold(alert_severity: str, threshold: str) -> bool:
     """Return True if *alert_severity* is >= *threshold* in priority."""
     try:
@@ -503,6 +579,10 @@ def main() -> None:
     log.info("Repository      : %s", repo)
     log.info("Batch size      : %d", batch_size)
     log.info("Severity filter : >= %s", severity_filter)
+
+    # ---- Validate API keys ----
+    validate_github_token(gh_token)
+    validate_devin_token(devin_token)
 
     # ---- Step 1: Fetch open alerts ----
     alerts = fetch_codeql_alerts(gh_token, repo, severity_filter)
