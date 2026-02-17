@@ -1,6 +1,10 @@
 # Devin CodeQL Fixer
 
-A GitHub Action that automatically identifies CodeQL security vulnerabilities, batches them, and dispatches each batch to [Devin](https://devin.ai) for autonomous root-cause fixing. Each batch produces one Pull Request with tested, CI-ready fixes.
+> Automatically fix CodeQL security vulnerabilities using [Devin](https://devin.ai) — from alert to merged PR, fully autonomous.
+
+A GitHub Actions pipeline that fetches open CodeQL alerts, intelligently batches them, and dispatches each batch to Devin for autonomous root-cause fixing. Each batch produces one Pull Request with tested, CI-ready security fixes.
+
+---
 
 ## Design Principles
 
@@ -10,9 +14,11 @@ A GitHub Action that automatically identifies CodeQL security vulnerabilities, b
 | 2 | **Clear PR titles** | PR titles name the actual vulnerabilities: `fix(security): Sql Injection, Reflected Xss (alerts #3, #7, #12)` instead of generic batch numbers. |
 | 3 | **Deep root-cause fixes** | Prompt explicitly forbids shallow approaches (suppression annotations, no-op validation). Demands data-flow tracing, industry-standard remediations, and explanation of why the fix is correct. |
 | 4 | **CI-green PRs** | Devin is instructed to run the full test suite and linter before opening the PR, and fix any failures caused by the changes. |
-| 5 | **No duplicate work on merge** | Only `state=open` alerts are fetched. Once a fix merges and CodeQL re-scans, the alert auto-closes and is never picked up again. In-flight alerts (with open PRs) are skipped via `<!-- codeql-alert-ids: ... -->` markers. |
+| 5 | **No duplicate work** | Only `state=open` alerts are fetched. Once a fix merges and CodeQL re-scans, the alert auto-closes and is never picked up again. In-flight alerts are tracked via `<!-- codeql-alert-ids: ... -->` markers in PR bodies. |
 
-## How It Works
+---
+
+## Architecture
 
 ```
 ┌──────────────┐      ┌────────────────────┐      ┌─────────────┐
@@ -31,20 +37,24 @@ A GitHub Action that automatically identifies CodeQL security vulnerabilities, b
                                                  └───────────────┘
 ```
 
+**Pipeline steps:**
+
 1. **Fetch** — queries GitHub Code Scanning API for all open CodeQL alerts
-2. **Deduplicate** — skips alerts that already have an open PR or active Devin branch (parsed from `<!-- codeql-alert-ids: ... -->` markers in PR bodies)
+2. **Deduplicate** — skips alerts that already have an open PR or active Devin branch
 3. **Filter** — excludes alerts below the configured severity threshold
-4. **Batch** — groups remaining alerts (default: 3 per batch), each batch gets a deterministic ID
+4. **Batch** — groups remaining alerts (default: 3 per batch) with deterministic IDs
 5. **Branch check** — skips batches whose branch (`devin/codeql-fix-{hash}`) already exists
 6. **Dispatch** — creates a Devin session per batch with a detailed root-cause-fix prompt
 7. **Poll** — monitors each session until completion, writes a summary report
 8. **PR** — Devin opens one Pull Request per batch with vulnerability analysis and fix details
 
+---
+
 ## Quick Start
 
 ### Prerequisites
 
-- CodeQL must be enabled on your repository
+- GitHub repository with [CodeQL](https://codeql.github.com/) enabled
 - A GitHub PAT with `repo` and `security_events` scopes
 - A Devin API token from [devin.ai](https://devin.ai)
 
@@ -59,74 +69,102 @@ A GitHub Action that automatically identifies CodeQL security vulnerabilities, b
    | `GH_PAT`          | GitHub PAT with `repo` + `security_events` scope |
    | `DEVIN_API_TOKEN`  | Your Devin API token                             |
 
-3. **Push to GitHub** — the `codeql-analysis.yml` workflow will run on push and generate alerts from the included `vulnerable-app/`.
+3. **Push to GitHub** — the `codeql-analysis.yml` workflow runs on push and generates alerts.
 
-4. **Wait for CodeQL scan to complete** (check Actions tab), then trigger the fixer:
-   - Actions > "Fix CodeQL Issues with Devin" > Run workflow
+4. **Trigger the fixer** — once CodeQL scanning completes:
+   - Go to Actions > **Fix CodeQL Issues with Devin** > Run workflow
 
 ### Configuration
 
-| Input             | Default    | Description                              |
-|-------------------|------------|------------------------------------------|
-| `batch_size`      | `3`        | Alerts per Devin session / PR            |
+| Input             | Default    | Description                                   |
+|-------------------|------------|-----------------------------------------------|
+| `batch_size`      | `3`        | Alerts per Devin session / PR                 |
 | `severity_filter` | `medium`   | Minimum severity: critical, high, medium, low |
 
-## Testing the Full Flow
+---
 
-The repo includes a `vulnerable-app/` directory with intentionally vulnerable code (JS + Python) that CodeQL will flag:
+## Vulnerable App
 
-| Vulnerability | JS file | Python file | CodeQL Rule |
-|--------------|---------|-------------|-------------|
-| SQL Injection | `server.js` | `app.py` | `js/sql-injection`, `py/sql-injection` |
-| Reflected XSS | `server.js` | `app.py` | `js/reflected-xss`, `py/reflective-xss` |
-| Path Traversal | `server.js` | `app.py` | `js/path-injection`, `py/path-injection` |
-| Command Injection | `server.js` | `app.py` | `js/command-line-injection`, `py/command-line-injection` |
-| Open Redirect | `server.js` | `app.py` | `js/server-side-unvalidated-url-redirection`, `py/url-redirection` |
-| Hardcoded Credentials | `server.js` | `app.py` | `js/hardcoded-credentials`, `py/hardcoded-credentials` |
+The repo includes a `vulnerable-app/` directory with **intentionally vulnerable** code (JavaScript + Python) that CodeQL flags. This lets you test the full end-to-end flow.
 
-**Testing steps:**
+### Vulnerability Coverage
+
+| Vulnerability         | JS (`server.js`)  | Python (`app.py`)  | CodeQL Rules                        |
+|-----------------------|--------------------|--------------------|-------------------------------------|
+| SQL Injection         | String concat in query | f-string in query | `js/sql-injection`, `py/sql-injection` |
+| Reflected XSS         | User input in HTML | Template injection | `js/reflected-xss`, `py/reflective-xss` |
+| Path Traversal        | User-controlled path | Unsanitized path  | `js/path-injection`, `py/path-injection` |
+| Command Injection     | Shell interpolation | `shell=True`       | `js/command-line-injection`, `py/command-line-injection` |
+| Open Redirect         | Unvalidated target | Unvalidated target | `js/server-side-unvalidated-url-redirection`, `py/url-redirection` |
+| Hardcoded Credentials | Constants in source | Constants in source | `js/hardcoded-credentials`, `py/hardcoded-credentials` |
+
+### End-to-End Test
 
 1. Push the repo to GitHub
-2. Wait for "CodeQL Analysis" workflow to complete (~5 min)
-3. Check Security tab > Code scanning alerts — you should see 10+ alerts
-4. Run "Fix CodeQL Issues with Devin" from Actions tab
-5. Watch Devin sessions work (links in the Actions run summary)
-6. Review the PRs that Devin opens — each should have:
+2. Wait for **CodeQL Analysis** workflow to complete
+3. Check **Security** tab > Code scanning alerts — you should see 10+ alerts
+4. Run **Fix CodeQL Issues with Devin** from Actions tab
+5. Watch Devin sessions work (links appear in the Actions run summary)
+6. Review the PRs Devin opens — each should have:
    - A descriptive title naming the actual vulnerabilities
-   - Root cause analysis in the body
+   - Root cause analysis in the PR body
    - `<!-- codeql-alert-ids: ... -->` tracking marker
-7. Merge a PR, wait for CodeQL to re-scan — the fixed alerts should auto-close
-8. Re-run the fixer — it should skip the now-closed alerts (idempotent)
+7. Merge a PR, wait for CodeQL re-scan — fixed alerts auto-close
+8. Re-run the fixer — it skips closed alerts (idempotent)
+
+---
 
 ## Repository Structure
 
 ```
 .
 ├── .github/workflows/
-│   ├── codeql-analysis.yml       # Scans repo for vulnerabilities
-│   └── codeql-fixer.yml          # Dispatches fixes to Devin
+│   ├── codeql-analysis.yml          # Scans repo for vulnerabilities
+│   └── codeql-fixer.yml             # Dispatches fixes to Devin
 ├── scripts/
-│   ├── fix_codeql_issues.py      # Core automation (fetch, dedup, batch, dispatch)
-│   └── requirements.txt
+│   ├── fix_codeql_issues.py         # Core automation (fetch, dedup, batch, dispatch)
+│   ├── test_fix_codeql_issues.py    # Unit tests (pytest)
+│   └── requirements.txt             # Python dependencies
 ├── vulnerable-app/
-│   ├── server.js                 # Intentionally vulnerable Express app
-│   ├── app.py                    # Intentionally vulnerable Flask app
-│   └── package.json
-├── .env.example
+│   ├── server.js                    # Intentionally vulnerable Express app
+│   ├── app.py                       # Intentionally vulnerable Flask app
+│   ├── package.json                 # Node.js dependencies
+│   └── requirements.txt             # Python dependencies
+├── .env.example                     # Environment variable template
 ├── .gitignore
 └── README.md
 ```
 
+---
+
+## How Devin Fixes Vulnerabilities
+
+The prompt sent to Devin enforces **industry-standard remediations**, not shallow workarounds:
+
+| Vulnerability | Required Fix | Rejected Approaches |
+|---------------|-------------|---------------------|
+| SQL Injection | Parameterized queries | String concatenation, `escape()` wrappers |
+| XSS | Context-appropriate output encoding | `innerHTML` without sanitization |
+| Path Traversal | Canonical path resolution + allowlist | Regex-only filtering |
+| Command Injection | Array-based exec, no shell interpolation | Blocklist of characters |
+| Hardcoded Credentials | Environment variables or secret managers | Obfuscation, Base64 encoding |
+
+Devin is explicitly instructed to:
+- **Trace the data flow** from source to sink
+- **Fix at the right layer** (input validation, safe APIs, or output encoding)
+- **Run tests** and fix any failures caused by changes
+- **Never use** suppression annotations (`// codeql-ignore`, `@SuppressWarnings`)
+
+---
+
 ## Enterprise Value
 
-For engineering organizations managing large codebases:
+| Benefit | Description |
+|---------|-------------|
+| **Automated remediation** | Security alerts get fixed in hours, not sprints |
+| **Developer time saved** | Engineers review focused PRs instead of writing fixes from scratch |
+| **Continuous compliance** | Scheduled weekly runs catch new alerts as they appear |
+| **Audit trail** | Every fix has a PR with root cause analysis linking back to the alert |
+| **Safe to automate** | Idempotent design means accidental re-runs cause zero harm |
 
-- **Automated remediation** — security alerts get fixed in hours, not sprints
-- **Developer time saved** — engineers review focused PRs instead of writing fixes from scratch
-- **Continuous compliance** — scheduled runs catch new alerts as they appear
-- **Audit trail** — every fix has a PR with root cause analysis linking back to the alert
-- **Safe to automate** — idempotent design means accidental re-runs cause zero harm
-
-## License
-
-MIT
+---
