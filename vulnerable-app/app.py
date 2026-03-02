@@ -46,16 +46,16 @@ def search_users():
 @app.route("/search")
 def search_page():
     query = request.args.get("q", "")
-    html = f"""
+    html = """
     <html>
       <body>
         <h1>Search Results</h1>
-        <p>You searched for: {query}</p>
+        <p>You searched for: {{ query }}</p>
         <p>No results found.</p>
       </body>
     </html>
     """
-    return render_template_string(html)
+    return render_template_string(html, query=query)
 
 
 # ---------------------------------------------------------------------------
