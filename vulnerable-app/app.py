@@ -30,8 +30,10 @@ def get_db():
 def search_users():
     search = request.args.get("search", "")
     conn = get_db()
-    query = f"SELECT * FROM users WHERE username LIKE '%{search}%'"
-    cursor = conn.execute(query)
+    cursor = conn.execute(
+        "SELECT * FROM users WHERE username LIKE ?",
+        ("%" + search + "%",),
+    )
     users = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return {"users": users}
@@ -44,16 +46,16 @@ def search_users():
 @app.route("/search")
 def search_page():
     query = request.args.get("q", "")
-    html = f"""
+    html = """
     <html>
       <body>
         <h1>Search Results</h1>
-        <p>You searched for: {query}</p>
+        <p>You searched for: {{ query }}</p>
         <p>No results found.</p>
       </body>
     </html>
     """
-    return render_template_string(html)
+    return render_template_string(html, query=query)
 
 
 # ---------------------------------------------------------------------------
@@ -114,4 +116,4 @@ def get_config():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=3000)
+    app.run(debug=False, port=3000)
