@@ -14,9 +14,18 @@ const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("better-sqlite3");
 
+const rateLimit = require("express-rate-limit");
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+const pingLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // limit each IP to 10 requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const db = new sqlite3("app.db");
 db.exec(`
@@ -79,7 +88,7 @@ app.get("/api/files", (req, res) => {
 // VULN 4: Command Injection — user input in shell command
 // CodeQL rule: js/command-line-injection
 // ---------------------------------------------------------------------------
-app.post("/api/ping", (req, res) => {
+app.post("/api/ping", pingLimiter, (req, res) => {
   const host = req.body.host;
   try {
     const result = execFileSync("ping", ["-c", "1", host]).toString();
