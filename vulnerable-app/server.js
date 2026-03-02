@@ -9,14 +9,23 @@
  */
 
 const express = require("express");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("better-sqlite3");
 
+const rateLimit = require("express-rate-limit");
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+const pingLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // limit each IP to 10 requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const db = new sqlite3("app.db");
 db.exec(`
@@ -79,10 +88,10 @@ app.get("/api/files", (req, res) => {
 // VULN 4: Command Injection — user input in shell command
 // CodeQL rule: js/command-line-injection
 // ---------------------------------------------------------------------------
-app.post("/api/ping", (req, res) => {
+app.post("/api/ping", pingLimiter, (req, res) => {
   const host = req.body.host;
   try {
-    const result = execSync("ping -c 1 " + host).toString();
+    const result = execFileSync("ping", ["-c", "1", host]).toString();
     res.json({ output: result });
   } catch (err) {
     res.status(500).json({ error: "Ping failed" });
@@ -95,7 +104,16 @@ app.post("/api/ping", (req, res) => {
 // ---------------------------------------------------------------------------
 app.get("/redirect", (req, res) => {
   const target = req.query.url;
-  res.redirect(target);
+  // Only allow relative paths that start with "/" and do not contain "//" or
+  // a protocol-relative prefix, preventing open-redirect to external sites.
+  if (typeof target !== "string" || !target.startsWith("/") || target.startsWith("//")) {
+    return res.status(400).json({ error: "Invalid redirect URL" });
+  }
+  const parsed = new URL(target, `${req.protocol}://${req.get("host")}`);
+  if (parsed.origin !== `${req.protocol}://${req.get("host")}`) {
+    return res.status(400).json({ error: "Invalid redirect URL" });
+  }
+  res.redirect(parsed.pathname + parsed.search + parsed.hash);
 });
 
 // ---------------------------------------------------------------------------
