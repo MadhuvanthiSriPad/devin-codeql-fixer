@@ -9,7 +9,7 @@
  */
 
 const express = require("express");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const sqlite3 = require("better-sqlite3");
@@ -82,7 +82,7 @@ app.get("/api/files", (req, res) => {
 app.post("/api/ping", (req, res) => {
   const host = req.body.host;
   try {
-    const result = execSync("ping -c 1 " + host).toString();
+    const result = execFileSync("ping", ["-c", "1", host]).toString();
     res.json({ output: result });
   } catch (err) {
     res.status(500).json({ error: "Ping failed" });
