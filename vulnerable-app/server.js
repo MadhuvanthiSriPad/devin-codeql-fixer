@@ -104,7 +104,16 @@ app.post("/api/ping", pingLimiter, (req, res) => {
 // ---------------------------------------------------------------------------
 app.get("/redirect", (req, res) => {
   const target = req.query.url;
-  res.redirect(target);
+  // Only allow relative paths that start with "/" and do not contain "//" or
+  // a protocol-relative prefix, preventing open-redirect to external sites.
+  if (typeof target !== "string" || !target.startsWith("/") || target.startsWith("//")) {
+    return res.status(400).json({ error: "Invalid redirect URL" });
+  }
+  const parsed = new URL(target, `${req.protocol}://${req.get("host")}`);
+  if (parsed.origin !== `${req.protocol}://${req.get("host")}`) {
+    return res.status(400).json({ error: "Invalid redirect URL" });
+  }
+  res.redirect(parsed.pathname + parsed.search + parsed.hash);
 });
 
 // ---------------------------------------------------------------------------
